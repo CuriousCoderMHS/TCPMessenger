@@ -774,7 +774,20 @@ public partial class MainWindow : Window
             _format = MessageFormat.AstmE1381;
             MessageTextBox.Text = builder.GeneratedMessage;
         }
-        
+        else if(_format == MessageFormat.Hl7Mllp)
+        {
+            var builder = new Hl7MessageBuilderWindow(currentRecords)
+            {
+                Owner = this
+            };
+
+            if (builder.ShowDialog() != true)
+                return;
+
+            FormatComboBox.SelectedIndex = 2;
+            _format = MessageFormat.Hl7Mllp;
+            MessageTextBox.Text = builder.GeneratedMessage;
+        }   
     }
 
     private void DisconnectButton_Click(object sender, RoutedEventArgs e)
