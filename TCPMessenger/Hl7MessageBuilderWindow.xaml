@@ -1,0 +1,168 @@
+<Window x:Class="TCPMessenger.Hl7MessageBuilderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Build HL7 Message"
+        Width="760"
+        Height="580"
+        MinWidth="650"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="#F4F7FB"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Background" Value="#1677FF" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Background" Value="#EAF1FB" />
+            <Setter Property="Foreground" Value="#174675" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="HL7 Message Builder"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Foreground="#1C2E40" />
+
+            <TextBlock Margin="0,4,0,16"
+                       FontSize="12"
+                       Foreground="#607080"
+                       Text="Build test record lines. The main app applies framing, checksums, ACK handling, and EOT." />
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                Padding="14"
+                Background="White"
+                BorderBrush="#D8E0EA"
+                BorderThickness="1"
+                CornerRadius="8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="165" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="100" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="Record type"
+                               FontSize="11"
+                               Foreground="#607080" />
+
+                    <ComboBox x:Name="RecordTypeComboBox"
+                              Margin="0,5,10,0"
+                              SelectedIndex="0"
+                              SelectionChanged="RecordTypeComboBox_SelectionChanged">
+                        <ComboBoxItem Content="Message Header (MSH)" />
+                        <ComboBoxItem Content="Patient (PID)" />
+                        <ComboBoxItem Content="Patient Visit (PV1)" />
+                        <ComboBoxItem Content="Common Order (ORC)" />
+                        <ComboBoxItem Content="Observation Request (OBR)" />
+                        <ComboBoxItem Content="Specimen Information (SPM)" />
+                        <ComboBoxItem Content="Observation Result (OBX)" />
+                        <ComboBoxItem Content="Custom" />
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="HL7 record content"
+                               FontSize="11"
+                               Foreground="#607080" />
+
+                    <TextBox x:Name="RecordTextBox"
+                             Margin="0,5,10,0"
+                             FontFamily="Cascadia Mono"
+                             ToolTip="One pipe-delimited record. Do not include STX, ETX, checksum, CR, or LF." />
+                </StackPanel>
+
+                <Button Grid.Column="2"
+                        Margin="0,22,0,0"
+                        Click="AddRecord_Click">
+                    Add record
+                </Button>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="0,14,0,14"
+                Padding="14"
+                Background="White"
+                BorderBrush="#D8E0EA"
+                BorderThickness="1"
+                CornerRadius="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Margin="0,0,0,10">
+                    <TextBlock Text="Message records"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="#1C2E40"
+                               DockPanel.Dock="Left" />
+
+                    <StackPanel Orientation="Horizontal"
+                                DockPanel.Dock="Right">
+                        <Button Style="{StaticResource SecondaryButton}"
+                                Margin="0,0,8,0"
+                                Click="RemoveRecord_Click">
+                            Remove selected
+                        </Button>
+
+                        <Button Style="{StaticResource SecondaryButton}"
+                                Click="ClearRecords_Click">
+                            Clear
+                        </Button>
+                    </StackPanel>
+                </DockPanel>
+
+                <ListBox x:Name="RecordsListBox"
+                         Grid.Row="1"
+                         FontFamily="Cascadia Mono"
+                         FontSize="12"
+                         BorderBrush="#D8E0EA"
+                         BorderThickness="1" />
+            </Grid>
+        </Border>
+
+        <DockPanel Grid.Row="3">
+            <TextBlock Text="HL7 field layouts vary by analyzer and LIS. Use approved integration-test values."
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       Foreground="#607080"
+                       DockPanel.Dock="Left" />
+
+            <StackPanel Orientation="Horizontal"
+                        DockPanel.Dock="Right">
+                <Button Style="{StaticResource SecondaryButton}"
+                        Margin="0,0,8,0"
+                        Click="Cancel_Click">
+                    Cancel
+                </Button>
+
+                <Button Click="UseMessage_Click">
+                    Use message
+                </Button>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

@@ -78,6 +78,22 @@ public partial class MainWindow : Window
         _format = FormatComboBox.SelectedIndex == 1
             ? MessageFormat.AstmE1381
             : MessageFormat.Hl7Mllp;
+        
+        if (IsLoaded)
+            UpdateBuildMessageButton();
+
+    }
+
+    private void UpdateBuildMessageButton()
+    {
+        if (_format == MessageFormat.AstmE1381)
+        {
+            BuildMessageButton.Content = "Build ASTM";
+        }
+        else
+        {
+            BuildMessageButton.Content = "Build HL7";
+        }     
     }
 
     private void UpdateModeUi()
@@ -258,16 +274,162 @@ public partial class MainWindow : Window
 
             while (TryTakeHl7Frame(pending, out byte[] frame))
             {
-                string message = Encoding.UTF8.GetString(frame, 1, frame.Length - 3);
+                string message = Encoding.UTF8.GetString(
+                    frame,
+                    1,
+                    frame.Length - 3);
 
-                AddMessage($"Remote:{Environment.NewLine}{message}");
+                message = NormalizeHl7Message(message);
 
+                AddMessage(
+                    $"HL7 received:{Environment.NewLine}" +
+                    message.Replace("\r", Environment.NewLine));
+
+                // Do not acknowledge an ACK, preventing ACK loops.
+                if (IsHl7Acknowledgement(message))
+                {
+                    AddMessage("HL7 ACK received.");
+                    continue;
+                }
+
+                string acknowledgement;
+
+                try
+                {
+                    acknowledgement = BuildHl7Acknowledgement(
+                        message,
+                        "AA",
+                        "Message accepted");
+                }
+                catch (Exception ex)
+                {
+                    AddMessage($"Cannot create HL7 ACK: {ex.Message}");
+                    continue;
+                }
+
+                await WriteRawAsync(
+                    client,
+                    CreateHl7Frame(acknowledgement));
+
+                AddMessage(
+                    $"HL7 MSA acknowledgement sent:{Environment.NewLine}" +
+                    acknowledgement.Replace("\r", Environment.NewLine));
+
+                // Optional host relay.
                 if (_runningAsHost)
                     await BroadcastRawAsync(frame, client);
             }
         }
     }
 
+    private static string BuildHl7Acknowledgement(
+    string receivedMessage,
+    string acknowledgementCode,
+    string acknowledgementText)
+    {
+        string normalized = NormalizeHl7Message(receivedMessage);
+
+        string? mshSegment = normalized
+            .Split('\r', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(segment =>
+                segment.StartsWith("MSH", StringComparison.Ordinal));
+
+        if (mshSegment is null || mshSegment.Length < 4)
+            throw new InvalidOperationException(
+                "The received message has no valid MSH segment.");
+
+        char fieldSeparator = mshSegment[3];
+        string[] fields = mshSegment.Split(fieldSeparator);
+
+        string GetField(int index, string fallback = "") =>
+            fields.Length > index && !string.IsNullOrWhiteSpace(fields[index])
+                ? fields[index]
+                : fallback;
+
+        string encodingCharacters = GetField(1, "^~\\&");
+        char componentSeparator = encodingCharacters[0];
+
+        string sendingApplication = GetField(2);
+        string sendingFacility = GetField(3);
+        string receivingApplication = GetField(4, "TCPMessenger");
+        string receivingFacility = GetField(5, "LOCAL");
+        string originalControlId = GetField(9, "UNKNOWN");
+        string processingId = GetField(10, "P");
+        string version = GetField(11, "2.4");
+
+        string messageType = GetField(8);
+        string[] messageComponents = messageType.Split(componentSeparator);
+
+        string triggerEvent = messageComponents.Length > 1
+            ? messageComponents[1]
+            : string.Empty;
+
+        string ackMessageType = string.IsNullOrWhiteSpace(triggerEvent)
+            ? "ACK"
+            : $"ACK{componentSeparator}{triggerEvent}{componentSeparator}ACK";
+
+        string acknowledgementControlId =
+            $"ACK{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+
+        string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+
+        var msh = string.Join(
+            fieldSeparator,
+            "MSH",
+            encodingCharacters,
+            receivingApplication,
+            receivingFacility,
+            sendingApplication,
+            sendingFacility,
+            timestamp,
+            "",
+            ackMessageType,
+            acknowledgementControlId,
+            processingId,
+            version);
+
+        var msa = string.Join(
+            fieldSeparator,
+            "MSA",
+            acknowledgementCode,
+            originalControlId,
+            acknowledgementText);
+
+        return $"{msh}\r{msa}\r";
+    }
+
+    private static bool IsHl7Acknowledgement(string message)
+    {
+        string normalized = NormalizeHl7Message(message);
+
+        string? mshSegment = normalized
+            .Split('\r', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(segment =>
+                segment.StartsWith("MSH", StringComparison.Ordinal));
+
+        if (mshSegment is null || mshSegment.Length < 4)
+            return false;
+
+        char fieldSeparator = mshSegment[3];
+        string[] fields = mshSegment.Split(fieldSeparator);
+
+        if (fields.Length <= 8)
+            return false;
+
+        string messageType = fields[8];
+        char componentSeparator =
+            fields.Length > 1 && fields[1].Length > 0
+                ? fields[1][0]
+                : '^';
+
+        string messageCode = messageType
+            .Split(componentSeparator)
+            .FirstOrDefault() ?? string.Empty;
+
+        return messageCode.Equals(
+            "ACK",
+            StringComparison.OrdinalIgnoreCase);
+    }
     private async Task ReceiveAstmAsync(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
@@ -376,19 +538,6 @@ public partial class MainWindow : Window
 
     private async void SendButton_Click(object sender, RoutedEventArgs e)
     {
-        List<string> lines = MessageTextBox.Text
-            .Replace("\r\n", "\n")
-            .Replace('\r', '\n')
-            .Split('\n')
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToList();
-
-        if (lines.Count == 0)
-        {
-            AddMessage("Enter at least one non-empty line.");
-            return;
-        }
-
         TcpClient[] targets = GetConnectedClients();
 
         if (targets.Length == 0)
@@ -399,18 +548,45 @@ public partial class MainWindow : Window
 
         try
         {
-            if (_format == MessageFormat.AstmE1381)
+            if (_format == MessageFormat.Hl7Mllp)
             {
+                string hl7Message = MessageTextBox.Text;
+
+                if (string.IsNullOrWhiteSpace(hl7Message))
+                {
+                    AddMessage("Enter an HL7 message.");
+                    return;
+                }
+
+                // HL7 requires CR between segments.
+                hl7Message = NormalizeHl7Message(hl7Message);
+
+                byte[] mllpFrame = CreateHl7Frame(hl7Message);
+
                 foreach (TcpClient client in targets)
-                    await SendAstmMessageAsync(client, lines);
+                    await WriteRawAsync(client, mllpFrame);
+
+                AddMessage(
+                    $"HL7 MLLP message sent:{Environment.NewLine}" +
+                    hl7Message.Replace("\r", Environment.NewLine));
             }
             else
             {
-                foreach (string line in lines)
+                List<string> records = MessageTextBox.Text
+                    .Replace("\r\n", "\n")
+                    .Replace('\r', '\n')
+                    .Split('\n')
+                    .Where(record => !string.IsNullOrWhiteSpace(record))
+                    .ToList();
+
+                if (records.Count == 0)
                 {
-                    await BroadcastRawAsync(CreateHl7Frame(line));
-                    AddMessage($"You: {line}");
+                    AddMessage("Enter at least one ASTM record.");
+                    return;
                 }
+
+                foreach (TcpClient client in targets)
+                    await SendAstmMessageAsync(client, records);
             }
 
             MessageTextBox.Clear();
@@ -421,6 +597,13 @@ public partial class MainWindow : Window
         }
     }
 
+    private static string NormalizeHl7Message(string message)
+    {
+        return message
+            .Replace("\r\n", "\r")
+            .Replace('\n', '\r')
+            .Trim('\r');
+    }
     private async Task SendAstmMessageAsync(TcpClient client, List<string> lines)
     {
         await _astmSendLock.WaitAsync();
@@ -512,20 +695,27 @@ public partial class MainWindow : Window
         }
     }
 
-    private static byte[] CreateHl7Frame(string text)
+    private static byte[] CreateHl7Frame(string message)
     {
-        byte[] message = Encoding.UTF8.GetBytes(text);
-        byte[] frame = new byte[message.Length + 3];
+        byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+        byte[] frame = new byte[messageBytes.Length + 3];
 
-        frame[0] = 0x0B;
-        Buffer.BlockCopy(message, 0, frame, 1, message.Length);
-        frame[^2] = 0x1C;
-        frame[^1] = Cr;
+        frame[0] = 0x0B; // VT: MLLP start block
+
+        Buffer.BlockCopy(
+            messageBytes,
+            0,
+            frame,
+            1,
+            messageBytes.Length);
+
+        frame[^2] = 0x1C; // FS: MLLP end block
+        frame[^1] = 0x0D; // CR: frame terminator
 
         return frame;
     }
 
-    private static byte[] CreateAstmFrame(
+    private static byte[] CreateAstmFrame(  
         string text,
         int frameIndex,
         bool isLastFrame)
@@ -737,24 +927,41 @@ public partial class MainWindow : Window
             _astmSessions.Remove(client);
     }
 
-    private void BuildAstmMessage_Click(object sender, RoutedEventArgs e)
+    private void BuildMessage_Click(object sender, RoutedEventArgs e)
     {
         string[] currentRecords = MessageTextBox.Text
             .Replace("\r\n", "\n")
             .Replace('\r', '\n')
             .Split('\n');
 
-        var builder = new AstmMessageBuilderWindow(currentRecords)
+        if(_format == MessageFormat.AstmE1381)
         {
-            Owner = this
-        };
+            var builder = new AstmMessageBuilderWindow(currentRecords)
+            {
+                Owner = this
+            };
 
-        if (builder.ShowDialog() != true)
-            return;
+            if (builder.ShowDialog() != true)
+                return;
 
-        FormatComboBox.SelectedIndex = 1;
-        _format = MessageFormat.AstmE1381;
-        MessageTextBox.Text = builder.GeneratedMessage;
+            FormatComboBox.SelectedIndex = 1;
+            _format = MessageFormat.AstmE1381;
+            MessageTextBox.Text = builder.GeneratedMessage;
+        }
+        else if(_format == MessageFormat.Hl7Mllp)
+        {
+            var builder = new Hl7MessageBuilderWindow(currentRecords)
+            {
+                Owner = this
+            };
+
+            if (builder.ShowDialog() != true)
+                return;
+
+            FormatComboBox.SelectedIndex = 2;
+            _format = MessageFormat.Hl7Mllp;
+            MessageTextBox.Text = builder.GeneratedMessage;
+        }   
     }
 
     private void DisconnectButton_Click(object sender, RoutedEventArgs e)
