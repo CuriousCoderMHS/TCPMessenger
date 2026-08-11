@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="TCP Messaging Studio"
-        Height="720" Width="920"
+        Height="650" Width="760"
         MinHeight="650" MinWidth="760"
         Background="#F4F7FB"
         FontFamily="Segoe UI"
@@ -235,11 +235,10 @@
                                FontWeight="SemiBold"
                                Foreground="#1C2E40"
                                DockPanel.Dock="Left" />
-                    <TextBlock Text="Live event log"
-                               VerticalAlignment="Bottom"
+                    <TextBlock Text="           Live event log"
                                FontSize="11"
                                Foreground="{StaticResource MutedBrush}"
-                               DockPanel.Dock="Right" />
+                               DockPanel.Dock="Right" Width="645" Height="15" />
                 </DockPanel>
 
                 <TextBox x:Name="MessagesTextBox"
@@ -286,7 +285,7 @@
 
                 <Button Grid.Column="1"
                         Margin="14,25,0,0"
-                        Height="72"
+                        Height="42"
                         Background="#EAF1FB"
                         Foreground="#174675"
                         Click="BuildAstmMessage_Click">
@@ -295,7 +294,7 @@
 
                 <Button Grid.Column="2"
                         Margin="14,25,0,0"
-                        Height="72"
+                        Height="42"
                         Click="SendButton_Click">
                     Send
                 </Button>
