@@ -78,6 +78,22 @@ public partial class MainWindow : Window
         _format = FormatComboBox.SelectedIndex == 1
             ? MessageFormat.AstmE1381
             : MessageFormat.Hl7Mllp;
+        
+        if (IsLoaded)
+            UpdateBuildMessageButton();
+
+    }
+
+    private void UpdateBuildMessageButton()
+    {
+        if (_format == MessageFormat.AstmE1381)
+        {
+            BuildMessageButton.Content = "Build ASTM";
+        }
+        else
+        {
+            BuildMessageButton.Content = "Build HL7";
+        }     
     }
 
     private void UpdateModeUi()
@@ -737,24 +753,28 @@ public partial class MainWindow : Window
             _astmSessions.Remove(client);
     }
 
-    private void BuildAstmMessage_Click(object sender, RoutedEventArgs e)
+    private void BuildMessage_Click(object sender, RoutedEventArgs e)
     {
         string[] currentRecords = MessageTextBox.Text
             .Replace("\r\n", "\n")
             .Replace('\r', '\n')
             .Split('\n');
 
-        var builder = new AstmMessageBuilderWindow(currentRecords)
+        if(_format == MessageFormat.AstmE1381)
         {
-            Owner = this
-        };
+            var builder = new AstmMessageBuilderWindow(currentRecords)
+            {
+                Owner = this
+            };
 
-        if (builder.ShowDialog() != true)
-            return;
+            if (builder.ShowDialog() != true)
+                return;
 
-        FormatComboBox.SelectedIndex = 1;
-        _format = MessageFormat.AstmE1381;
-        MessageTextBox.Text = builder.GeneratedMessage;
+            FormatComboBox.SelectedIndex = 1;
+            _format = MessageFormat.AstmE1381;
+            MessageTextBox.Text = builder.GeneratedMessage;
+        }
+        
     }
 
     private void DisconnectButton_Click(object sender, RoutedEventArgs e)

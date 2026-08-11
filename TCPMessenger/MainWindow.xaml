@@ -283,12 +283,13 @@
                              FontSize="11" />
                 </StackPanel>
 
-                <Button Grid.Column="1"
+                <Button x:Name="BuildMessageButton"
+                        Grid.Column="1"
                         Margin="14,25,0,0"
                         Height="42"
                         Background="#EAF1FB"
                         Foreground="#174675"
-                        Click="BuildAstmMessage_Click">
+                        Click="BuildMessage_Click">
                     Build ASTM
                 </Button>
 
