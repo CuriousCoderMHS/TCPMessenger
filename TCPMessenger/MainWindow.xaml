@@ -229,19 +229,34 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <DockPanel Margin="0,0,0,8">
-                    <TextBlock Text="Communication activity"
-                               FontSize="15"
-                               FontWeight="SemiBold"
-                               Foreground="#1C2E40"
-                               DockPanel.Dock="Left" />
-                    <TextBlock Text="           Live event log"
-                               FontSize="11"
-                               Foreground="{StaticResource MutedBrush}"
-                               DockPanel.Dock="Right" Width="645" Height="15" />
-                </DockPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="105" />
+                    </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="MessagesTextBox"
+                    <TextBlock Text="Communication activity"
+                        Grid.Column="0"
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        Foreground="#1C2E40"
+                        DockPanel.Dock="Left" />
+                    <TextBlock Text=" Live event log"
+                        Grid.Column="1"
+                        FontSize="11"
+                        Foreground="{StaticResource MutedBrush}"
+                        DockPanel.Dock="Right" Width="645" Height="15" />
+
+                    <Button x:Name="ExportLogButton"
+                        Grid.Column="2"
+                        Height="22"
+                        Content="Export log"
+                        Click="ExportLogButton_Click" />
+
+                </Grid>
+
+                <RichTextBox x:Name="MessagesTextBox"
                          Grid.Row="1"
                          IsReadOnly="True"
                          AcceptsReturn="True"
@@ -249,8 +264,7 @@
                          FontFamily="Cascadia Mono"
                          FontSize="11"
                          Background="#F8FAFC"
-                         BorderBrush="#DDE6F0"
-                         TextWrapping="Wrap" />
+                         BorderBrush="#DDE6F0"/>
             </Grid>
         </Border>
 

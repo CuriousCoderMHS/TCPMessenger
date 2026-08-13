@@ -4,6 +4,8 @@
              xmlns:local="clr-namespace:TCPMessenger"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <Style TargetType="Window">
+            <Setter Property="Icon" Value="/Assets/MultiResolutionAppIcon.ico"/>
+        </Style>
     </Application.Resources>
 </Application>
