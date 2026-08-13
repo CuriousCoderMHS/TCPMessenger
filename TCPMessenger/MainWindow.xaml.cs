@@ -12,6 +12,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.IO;
 using Microsoft.Win32;
+using System.Windows.Documents;
 
 
 namespace TCPMessenger;
@@ -32,7 +33,7 @@ public partial class MainWindow : Window
         private TaskCompletionSource<byte>? _reply;
         public int ExpectedFrameNumber { get; set; } = 1;
 
-
+        public List<string> IncomingRecords { get; } = new();
 
         public Task<byte> WaitForReply()
         {
@@ -52,7 +53,11 @@ public partial class MainWindow : Window
             }
         }
 
-        public void ResetIncomingMessage() => ExpectedFrameNumber = 1;
+        public void ResetIncomingMessage()
+        {
+            ExpectedFrameNumber = 1;
+            IncomingRecords.Clear();
+        }
     }
 
     private TcpListener? _listener;
@@ -92,16 +97,27 @@ public partial class MainWindow : Window
 
     private void AddMessage(string text)
     {
+        bool isError = text.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase);
         string entry =
             $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {text}{Environment.NewLine}{Environment.NewLine}";
 
-        // Write the same entry that is shown in the on-screen communication log.
+        // Exported log remains plain text.
         lock (_logLock)
             File.AppendAllText(_communicationLogPath, entry);
 
         _ = Dispatcher.InvokeAsync(() =>
         {
-            MessagesTextBox.AppendText(entry);
+            var paragraph = new Paragraph
+            {
+                Margin = new Thickness(0)
+            };
+
+            paragraph.Inlines.Add(new Run(entry)
+            {
+                Foreground = isError ? Brushes.Red : Brushes.Black
+            });
+
+            MessagesTextBox.Document.Blocks.Add(paragraph);
             MessagesTextBox.ScrollToEnd();
         });
     }
@@ -127,7 +143,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AddMessage($"Log export failed: {ex.Message}");
+            AddMessage($"ERROR: Log export failed: {ex.Message}");
         }
     }
 
@@ -235,7 +251,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AddMessage($"Host error: {ex.Message}");
+            AddMessage($"ERROR: Host error: {ex.Message}");
         }
         finally
         {
@@ -295,7 +311,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AddMessage($"Connection failed: {ex.Message}");
+            AddMessage($"ERROR: Connection failed: {ex.Message}");
             UpdateConnectionButton();
         }
     }
@@ -581,10 +597,15 @@ public partial class MainWindow : Window
                 out string error))
         {
             await WriteRawAsync(client, new[] { Nak });
-            AddMessage($"ASTM: invalid frame; NAK sent. {error}");
+            AddMessage($"ERROR: ASTM: invalid frame; NAK sent. {error}");
 
             return true;
         }
+
+        session.IncomingRecords.AddRange(
+            payload.Split(
+                new[] { '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries));
 
         await WriteRawAsync(client, new[] { Ack });
 
@@ -595,7 +616,14 @@ public partial class MainWindow : Window
 
         if (isFinal)
         {
-            //AddMessage("ASTM: final ETX frame received.");
+            if (!TryValidateAstmMessage(session.IncomingRecords, out string validationError))
+            {
+                AddMessage($"ERROR: ASTM inbound message validation failed: {validationError}");
+                session.ResetIncomingMessage();
+                return true;
+            }
+
+            AddMessage("ASTM inbound message validation passed.");
             session.ResetIncomingMessage();
         }
 
@@ -608,7 +636,7 @@ public partial class MainWindow : Window
 
         if (targets.Length == 0)
         {
-            AddMessage("No connected peers.");
+            AddMessage("ERROR: No connected peers.");
             return;
         }
 
@@ -647,13 +675,13 @@ public partial class MainWindow : Window
 
                 if (records.Count == 0)
                 {
-                    AddMessage("Enter at least one ASTM record.");
+                    AddMessage("ERROR: Enter at least one ASTM record.");
                     return;
                 }
 
                 if (!TryValidateAstmMessage(records, out string validationError))
                 {
-                    AddMessage($"ASTM message validation failed: {validationError}");
+                    AddMessage($"ERROR: ASTM message validation failed: {validationError}");
                     return;
                 }
 
@@ -665,7 +693,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AddMessage($"Send failed: {ex.Message}");
+            AddMessage($"ERROR: Send failed: {ex.Message}");
         }
     }
 
@@ -734,17 +762,17 @@ public partial class MainWindow : Window
                 }
 
                 AddMessage(
-                    $"ASTM: NAK received for {description}; retry {attempt}/{retries}.");
+                    $"ERROR: ASTM: NAK received for {description}; retry {attempt}/{retries}.");
             }
             catch (TimeoutException)
             {
                 AddMessage(
-                    $"ASTM: timeout waiting for ACK to {description}; retry {attempt}/{retries}.");
+                    $"ERROR: ASTM: timeout waiting for ACK to {description}; retry {attempt}/{retries}.");
             }
         }
 
         throw new InvalidOperationException(
-            $"ASTM: communication failed: no ACK for {description}.");
+            $"ERROR: ASTM: communication failed: no ACK for {description}.");
     }
 
     private async Task BroadcastRawAsync(byte[] data, TcpClient? except = null)
@@ -845,7 +873,7 @@ public partial class MainWindow : Window
             frame[^2] != Cr ||
             frame[^1] != Lf)
         {
-            error = "Invalid ASTM frame structure.";
+            error = "ERROR: Invalid ASTM frame structure.";
             return false;
         }
 
@@ -853,7 +881,7 @@ public partial class MainWindow : Window
 
         if (frame[1] != expectedNumber)
         {
-            error = $"Expected frame {expectedFrameNumber}, received {(char)frame[1]}.";
+            error = $"ERROR: Expected frame {expectedFrameNumber}, received {(char)frame[1]}.";
             return false;
         }
 
@@ -862,7 +890,7 @@ public partial class MainWindow : Window
 
         if (terminator != Etb && terminator != Etx)
         {
-            error = "Expected ETB or ETX terminator.";
+            error = "ERROR: Expected ETB or ETX terminator.";
             return false;
         }
 
@@ -880,7 +908,7 @@ public partial class MainWindow : Window
                 expectedChecksum,
                 StringComparison.OrdinalIgnoreCase))
         {
-            error = $"Checksum mismatch; expected {expectedChecksum}, received {receivedChecksum}.";
+            error = $"ERROR: Checksum mismatch; expected {expectedChecksum}, received {receivedChecksum}.";
             return false;
         }
 
@@ -914,7 +942,8 @@ public partial class MainWindow : Window
             return false;
         }
 
-        bool hasPatientOrOrder = false;
+        bool hasPatient = false;
+        bool hasOrder = false;
 
         for (int index = 0; index < records.Count; index++)
         {
@@ -944,13 +973,22 @@ public partial class MainWindow : Window
                 return false;
             }
 
-            if (record[0] is 'P' or 'O')
-                hasPatientOrOrder = true;
+            if (record[0] is 'P')
+                hasPatient = true;
+
+            if (record[0] is 'O')
+                hasOrder = true;
         }
 
-        if (!hasPatientOrOrder)
+        if (!hasPatient)
         {
-            error = "The ASTM message must contain at least a patient (P) or order (O) record.";
+            error = "The ASTM message must contain at least one patient (P) record.";
+            return false;
+        }
+
+        if (!hasOrder)
+        {
+            error = "The ASTM message must contain at least one Order (O) record.";
             return false;
         }
 
