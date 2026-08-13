@@ -10,6 +10,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.IO;
+using Microsoft.Win32;
+
 
 namespace TCPMessenger;
 
@@ -20,7 +23,10 @@ public partial class MainWindow : Window
 
     private enum MessageFormat { Hl7Mllp, AstmE1381 }
 
-    private sealed class AstmSession
+    private readonly object _logLock = new();
+    private readonly string _communicationLogPath;
+
+    private sealed class AstmSession    
     {
         private readonly object _lock = new();
         private TaskCompletionSource<byte>? _reply;
@@ -62,7 +68,65 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _communicationLogPath = CreateCommunicationLogFile();
         UpdateModeUi();
+        AddMessage($"Communication log: {_communicationLogPath}");
+    }
+
+    private static string CreateCommunicationLogFile()
+    {
+        string directory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TCPMessenger",
+            "Logs");
+
+        Directory.CreateDirectory(directory);
+
+        string fileName = $"communication-{DateTime.Now:yyyyMMdd-HHmmss}.log";
+        string path = Path.Combine(directory, fileName);
+        File.WriteAllText(path, "TCPMessenger communication log" + Environment.NewLine);
+        return path;
+    }
+
+    private void AddMessage(string text)
+    {
+        string entry =
+            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {text}{Environment.NewLine}{Environment.NewLine}";
+
+        // Write the same entry that is shown in the on-screen communication log.
+        lock (_logLock)
+            File.AppendAllText(_communicationLogPath, entry);
+
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            MessagesTextBox.AppendText(entry);
+            MessagesTextBox.ScrollToEnd();
+        });
+    }
+
+    private void ExportLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export communication log",
+            Filter = "Log files (*.log)|*.log|Text files (*.txt)|*.txt|All files (*.*)|*.*",
+            FileName = $"TCPMessenger-log-{DateTime.Now:yyyyMMdd-HHmmss}.log"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            lock (_logLock)
+                File.Copy(_communicationLogPath, dialog.FileName, overwrite: true);
+
+            AddMessage($"Communication log exported to: {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            AddMessage($"Log export failed: {ex.Message}");
+        }
     }
 
     private bool IsHostMode => ModeComboBox.SelectedIndex == 0;
@@ -469,7 +533,7 @@ public partial class MainWindow : Window
             session.ResetIncomingMessage();
 
             await WriteRawAsync(client, new[] { Ack });
-            AddMessage("ASTM: ENQ received; ACK sent.");
+            //AddMessage("ASTM: ENQ received; ACK sent.");
 
             return true;
         }
@@ -529,7 +593,7 @@ public partial class MainWindow : Window
 
         if (isFinal)
         {
-            AddMessage("ASTM: final ETX frame received.");
+            //AddMessage("ASTM: final ETX frame received.");
             session.ResetIncomingMessage();
         }
 
@@ -625,7 +689,7 @@ public partial class MainWindow : Window
                     frame,
                     $"frame {((index + 1) % 8)}");
 
-                AddMessage($"You: {lines[index]}");
+                //AddMessage($"You: {lines[index]}");
             }
 
             await WriteRawAsync(client, new[] { Eot });
@@ -657,7 +721,7 @@ public partial class MainWindow : Window
 
                 if (reply == Ack)
                 {
-                    AddMessage($"ASTM: ACK received for {description}.");
+                    //AddMessage($"ASTM: ACK received for {description}.");
                     return;
                 }
 
@@ -672,7 +736,7 @@ public partial class MainWindow : Window
         }
 
         throw new InvalidOperationException(
-            $"ASTM communication failed: no ACK for {description}.");
+            $"ASTM: communication failed: no ACK for {description}.");
     }
 
     private async Task BroadcastRawAsync(byte[] data, TcpClient? except = null)
@@ -688,6 +752,7 @@ public partial class MainWindow : Window
         try
         {
             await client.GetStream().WriteAsync(data);
+            LogTransmittedBytes(data);
         }
         finally
         {
@@ -866,6 +931,12 @@ public partial class MainWindow : Window
         AddMessage($"RX: {text}");
     }
 
+    private void LogTransmittedBytes(byte[] buffer)
+    {
+        string text = string.Concat(buffer.Select(FormatSocketByte));
+        AddMessage($"TX: {text}");
+    }
+
     private static string FormatSocketByte(byte value)
     {
         return value switch
@@ -984,16 +1055,7 @@ public partial class MainWindow : Window
         UpdateConnectionButton();
     }
 
-    private void AddMessage(string text)
-    {
-        _ = Dispatcher.InvokeAsync(() =>
-        {
-            MessagesTextBox.AppendText(
-                $"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}{Environment.NewLine}");
-
-            MessagesTextBox.ScrollToEnd();
-        });
-    }
+    
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {

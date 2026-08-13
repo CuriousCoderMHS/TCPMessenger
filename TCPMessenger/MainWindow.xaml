@@ -229,17 +229,32 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <DockPanel Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="105" />
+                    </Grid.ColumnDefinitions>
+
                     <TextBlock Text="Communication activity"
-                               FontSize="15"
-                               FontWeight="SemiBold"
-                               Foreground="#1C2E40"
-                               DockPanel.Dock="Left" />
-                    <TextBlock Text="           Live event log"
-                               FontSize="11"
-                               Foreground="{StaticResource MutedBrush}"
-                               DockPanel.Dock="Right" Width="645" Height="15" />
-                </DockPanel>
+                        Grid.Column="0"
+                        FontSize="15"
+                        FontWeight="SemiBold"
+                        Foreground="#1C2E40"
+                        DockPanel.Dock="Left" />
+                    <TextBlock Text=" Live event log"
+                        Grid.Column="1"
+                        FontSize="11"
+                        Foreground="{StaticResource MutedBrush}"
+                        DockPanel.Dock="Right" Width="645" Height="15" />
+
+                    <Button x:Name="ExportLogButton"
+                        Grid.Column="2"
+                        Height="22"
+                        Content="Export log"
+                        Click="ExportLogButton_Click" />
+
+                </Grid>
 
                 <TextBox x:Name="MessagesTextBox"
                          Grid.Row="1"
