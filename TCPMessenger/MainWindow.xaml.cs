@@ -1,18 +1,20 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.IO;
-using Microsoft.Win32;
 using System.Windows.Documents;
+using System.Windows.Media;
 
 
 namespace TCPMessenger;
@@ -78,6 +80,13 @@ public partial class MainWindow : Window
         _communicationLogPath = CreateCommunicationLogFile();
         UpdateModeUi();
         AddMessage($"Communication log: {_communicationLogPath}");
+
+        string version = FileVersionInfo
+            .GetVersionInfo(
+                System.Reflection.Assembly.GetExecutingAssembly().Location)
+            .FileVersion!;
+
+        Version.Text = $"Version {version}";
     }
 
     private static string CreateCommunicationLogFile()

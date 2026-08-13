@@ -113,7 +113,8 @@
                         Background="#1D3E5F"
                         CornerRadius="14"
                         Padding="11,5">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Vertical">
+                        <StackPanel Orientation="Horizontal">
                         <Ellipse Width="8" Height="8"
                                  Margin="0,0,6,0"
                                  Fill="#6EE7B7" />
@@ -121,7 +122,15 @@
                                    FontSize="12"
                                    FontWeight="SemiBold"
                                    Foreground="#DDF8EA" />
+                        </StackPanel>
+                        <TextBlock x:Name="Version"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="#DDF8EA" />
                     </StackPanel>
+                        
+                    
+                    
                 </Border>
             </Grid>
         </Border>
