@@ -1,4 +1,4 @@
-name: Publish Windows application
+name: Build Windows installer
 
 on:
   push:
@@ -26,16 +26,31 @@ jobs:
       - name: Restore packages
         run: dotnet restore TCPMessenger/TCPMessenger.csproj
 
-      - name: Publish application files
-        run: dotnet publish TCPMessenger/TCPMessenger.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained false
-          --output publish
+      - name: Read application version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content TCPMessenger/TCPMessenger.csproj
+          $version = @($project.Project.PropertyGroup.Version | Where-Object { $_ })[0]
 
-      - name: Upload published application
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "TCPMessenger.csproj must define a <Version> value."
+          }
+
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Publish application files
+        run: dotnet publish TCPMessenger/TCPMessenger.csproj --configuration Release --runtime win-x64 --self-contained true --output publish
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Create installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ steps.version.outputs.value }}" installer\TCPMessenger.iss'
+
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: TCP-Messaging-Studio-win-x64
-          path: publish/
+          name: TCP-Messaging-Studio-Setup-win-x64
+          path: installer-output/TCPMessenger-Setup.exe
           if-no-files-found: error
