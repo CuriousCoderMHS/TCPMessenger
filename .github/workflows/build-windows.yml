@@ -27,14 +27,7 @@ jobs:
         run: dotnet restore TCPMessenger/TCPMessenger.csproj
 
       - name: Publish application files
-        run: >
-          dotnet publish TCPMessenger/TCPMessenger.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained false
-           
-          			  
-          --output publish
+        run: dotnet publish TCPMessenger/TCPMessenger.csproj --configuration Release --runtime win-x64 --self-contained false --output publish
 
       - name: Upload published application
         uses: actions/upload-artifact@v4
