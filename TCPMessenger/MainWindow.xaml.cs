@@ -32,6 +32,8 @@ public partial class MainWindow : Window
         private TaskCompletionSource<byte>? _reply;
         public int ExpectedFrameNumber { get; set; } = 1;
 
+
+
         public Task<byte> WaitForReply()
         {
             lock (_lock)
@@ -649,6 +651,12 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                if (!TryValidateAstmMessage(records, out string validationError))
+                {
+                    AddMessage($"ASTM message validation failed: {validationError}");
+                    return;
+                }
+
                 foreach (TcpClient client in targets)
                     await SendAstmMessageAsync(client, records);
             }
@@ -878,6 +886,73 @@ public partial class MainWindow : Window
 
         payload = Encoding.ASCII.GetString(frame, 2, terminatorPosition - 2);
         isFinal = terminator == Etx;
+
+        return true;
+    }
+
+    private static bool TryValidateAstmMessage(
+    IReadOnlyList<string> records,
+    out string error)
+    {
+        error = string.Empty;
+
+        if (records.Count < 2)
+        {
+            error = "An ASTM message must contain at least a header (H) and terminator (L) record.";
+            return false;
+        }
+
+        if (!records[0].StartsWith("H|", StringComparison.Ordinal))
+        {
+            error = "The first ASTM record must be a header record beginning with H|.";
+            return false;
+        }
+
+        if (!records[^1].StartsWith("L|", StringComparison.Ordinal))
+        {
+            error = "The last ASTM record must be a terminator record beginning with L|.";
+            return false;
+        }
+
+        bool hasPatientOrOrder = false;
+
+        for (int index = 0; index < records.Count; index++)
+        {
+            string record = records[index];
+
+            if (record.Any(character => character > 0x7F))
+            {
+                error = $"Record {index + 1} contains non-ASCII characters.";
+                return false;
+            }
+
+            if (record.Length < 2 || record[1] != '|')
+            {
+                error = $"Record {index + 1} must start with a record type followed by |.";
+                return false;
+            }
+
+            if (record[0] is not ('H' or 'P' or 'O' or 'R' or 'C' or 'M' or 'Q' or 'L'))
+            {
+                error = $"Record {index + 1} has unsupported ASTM record type '{record[0]}'.";
+                return false;
+            }
+
+            if (index > 0 && index < records.Count - 1 && record[0] is 'H' or 'L')
+            {
+                error = $"Header (H) and terminator (L) records may only appear at the beginning and end.";
+                return false;
+            }
+
+            if (record[0] is 'P' or 'O')
+                hasPatientOrOrder = true;
+        }
+
+        if (!hasPatientOrOrder)
+        {
+            error = "The ASTM message must contain at least a patient (P) or order (O) record.";
+            return false;
+        }
 
         return true;
     }
