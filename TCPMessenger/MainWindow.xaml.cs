@@ -10,6 +10,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.IO;
+using Microsoft.Win32;
+
 
 namespace TCPMessenger;
 
@@ -20,11 +23,16 @@ public partial class MainWindow : Window
 
     private enum MessageFormat { Hl7Mllp, AstmE1381 }
 
-    private sealed class AstmSession
+    private readonly object _logLock = new();
+    private readonly string _communicationLogPath;
+
+    private sealed class AstmSession    
     {
         private readonly object _lock = new();
         private TaskCompletionSource<byte>? _reply;
         public int ExpectedFrameNumber { get; set; } = 1;
+
+
 
         public Task<byte> WaitForReply()
         {
@@ -62,7 +70,65 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _communicationLogPath = CreateCommunicationLogFile();
         UpdateModeUi();
+        AddMessage($"Communication log: {_communicationLogPath}");
+    }
+
+    private static string CreateCommunicationLogFile()
+    {
+        string directory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TCPMessenger",
+            "Logs");
+
+        Directory.CreateDirectory(directory);
+
+        string fileName = $"communication-{DateTime.Now:yyyyMMdd-HHmmss}.log";
+        string path = Path.Combine(directory, fileName);
+        File.WriteAllText(path, "TCPMessenger communication log" + Environment.NewLine);
+        return path;
+    }
+
+    private void AddMessage(string text)
+    {
+        string entry =
+            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {text}{Environment.NewLine}{Environment.NewLine}";
+
+        // Write the same entry that is shown in the on-screen communication log.
+        lock (_logLock)
+            File.AppendAllText(_communicationLogPath, entry);
+
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            MessagesTextBox.AppendText(entry);
+            MessagesTextBox.ScrollToEnd();
+        });
+    }
+
+    private void ExportLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export communication log",
+            Filter = "Log files (*.log)|*.log|Text files (*.txt)|*.txt|All files (*.*)|*.*",
+            FileName = $"TCPMessenger-log-{DateTime.Now:yyyyMMdd-HHmmss}.log"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            lock (_logLock)
+                File.Copy(_communicationLogPath, dialog.FileName, overwrite: true);
+
+            AddMessage($"Communication log exported to: {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            AddMessage($"Log export failed: {ex.Message}");
+        }
     }
 
     private bool IsHostMode => ModeComboBox.SelectedIndex == 0;
@@ -469,7 +535,7 @@ public partial class MainWindow : Window
             session.ResetIncomingMessage();
 
             await WriteRawAsync(client, new[] { Ack });
-            AddMessage("ASTM: ENQ received; ACK sent.");
+            //AddMessage("ASTM: ENQ received; ACK sent.");
 
             return true;
         }
@@ -529,7 +595,7 @@ public partial class MainWindow : Window
 
         if (isFinal)
         {
-            AddMessage("ASTM: final ETX frame received.");
+            //AddMessage("ASTM: final ETX frame received.");
             session.ResetIncomingMessage();
         }
 
@@ -585,6 +651,12 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                if (!TryValidateAstmMessage(records, out string validationError))
+                {
+                    AddMessage($"ASTM message validation failed: {validationError}");
+                    return;
+                }
+
                 foreach (TcpClient client in targets)
                     await SendAstmMessageAsync(client, records);
             }
@@ -625,7 +697,7 @@ public partial class MainWindow : Window
                     frame,
                     $"frame {((index + 1) % 8)}");
 
-                AddMessage($"You: {lines[index]}");
+                //AddMessage($"You: {lines[index]}");
             }
 
             await WriteRawAsync(client, new[] { Eot });
@@ -657,7 +729,7 @@ public partial class MainWindow : Window
 
                 if (reply == Ack)
                 {
-                    AddMessage($"ASTM: ACK received for {description}.");
+                    //AddMessage($"ASTM: ACK received for {description}.");
                     return;
                 }
 
@@ -672,7 +744,7 @@ public partial class MainWindow : Window
         }
 
         throw new InvalidOperationException(
-            $"ASTM communication failed: no ACK for {description}.");
+            $"ASTM: communication failed: no ACK for {description}.");
     }
 
     private async Task BroadcastRawAsync(byte[] data, TcpClient? except = null)
@@ -688,6 +760,7 @@ public partial class MainWindow : Window
         try
         {
             await client.GetStream().WriteAsync(data);
+            LogTransmittedBytes(data);
         }
         finally
         {
@@ -817,6 +890,73 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private static bool TryValidateAstmMessage(
+    IReadOnlyList<string> records,
+    out string error)
+    {
+        error = string.Empty;
+
+        if (records.Count < 2)
+        {
+            error = "An ASTM message must contain at least a header (H) and terminator (L) record.";
+            return false;
+        }
+
+        if (!records[0].StartsWith("H|", StringComparison.Ordinal))
+        {
+            error = "The first ASTM record must be a header record beginning with H|.";
+            return false;
+        }
+
+        if (!records[^1].StartsWith("L|", StringComparison.Ordinal))
+        {
+            error = "The last ASTM record must be a terminator record beginning with L|.";
+            return false;
+        }
+
+        bool hasPatientOrOrder = false;
+
+        for (int index = 0; index < records.Count; index++)
+        {
+            string record = records[index];
+
+            if (record.Any(character => character > 0x7F))
+            {
+                error = $"Record {index + 1} contains non-ASCII characters.";
+                return false;
+            }
+
+            if (record.Length < 2 || record[1] != '|')
+            {
+                error = $"Record {index + 1} must start with a record type followed by |.";
+                return false;
+            }
+
+            if (record[0] is not ('H' or 'P' or 'O' or 'R' or 'C' or 'M' or 'Q' or 'L'))
+            {
+                error = $"Record {index + 1} has unsupported ASTM record type '{record[0]}'.";
+                return false;
+            }
+
+            if (index > 0 && index < records.Count - 1 && record[0] is 'H' or 'L')
+            {
+                error = $"Header (H) and terminator (L) records may only appear at the beginning and end.";
+                return false;
+            }
+
+            if (record[0] is 'P' or 'O')
+                hasPatientOrOrder = true;
+        }
+
+        if (!hasPatientOrOrder)
+        {
+            error = "The ASTM message must contain at least a patient (P) or order (O) record.";
+            return false;
+        }
+
+        return true;
+    }
+
     private static bool TryTakeHl7Frame(List<byte> bytes, out byte[] frame)
     {
         frame = Array.Empty<byte>();
@@ -864,6 +1004,12 @@ public partial class MainWindow : Window
                 .Select(FormatSocketByte));
 
         AddMessage($"RX: {text}");
+    }
+
+    private void LogTransmittedBytes(byte[] buffer)
+    {
+        string text = string.Concat(buffer.Select(FormatSocketByte));
+        AddMessage($"TX: {text}");
     }
 
     private static string FormatSocketByte(byte value)
@@ -984,16 +1130,7 @@ public partial class MainWindow : Window
         UpdateConnectionButton();
     }
 
-    private void AddMessage(string text)
-    {
-        _ = Dispatcher.InvokeAsync(() =>
-        {
-            MessagesTextBox.AppendText(
-                $"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}{Environment.NewLine}");
-
-            MessagesTextBox.ScrollToEnd();
-        });
-    }
+    
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
