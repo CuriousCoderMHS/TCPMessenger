@@ -7,6 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
 	<ApplicationIcon>Assets\MultiResolutionAppIcon.ico</ApplicationIcon>
+	<Version>1.1.0</Version>
+	<FileVersion>1.1.0</FileVersion>
   </PropertyGroup>
 
 </Project>
