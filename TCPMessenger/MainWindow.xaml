@@ -256,7 +256,7 @@
 
                 </Grid>
 
-                <TextBox x:Name="MessagesTextBox"
+                <RichTextBox x:Name="MessagesTextBox"
                          Grid.Row="1"
                          IsReadOnly="True"
                          AcceptsReturn="True"
@@ -264,8 +264,7 @@
                          FontFamily="Cascadia Mono"
                          FontSize="11"
                          Background="#F8FAFC"
-                         BorderBrush="#DDE6F0"
-                         TextWrapping="Wrap" />
+                         BorderBrush="#DDE6F0"/>
             </Grid>
         </Border>
 
